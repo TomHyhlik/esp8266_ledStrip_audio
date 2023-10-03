@@ -1,11 +1,12 @@
-/* adc example
+/**
+  ******************************************************************************
+  * @brief   
+  ******************************************************************************
+**/
 
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
 
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
+/* Includes ------------------------------------------------------------------*/
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,31 +28,40 @@
 #include "ws2812.h"
 
 
+/* Private types -------------------------------------------------------------*/
+/* Private constants ---------------------------------------------------------*/
 
 
 
-/**********************************************************/
 #define PIN_LED_INTEGRATED                   GPIO_NUM_2
 #define PIN_DBG1                             GPIO_NUM_5
 #define PIN_WS2812                           GPIO_NUM_4
 
+#define LEDSTRIP_LED_CNT                     (60)    // Number of "pixels"
 
-
-#define LEDSTRIP_LED_CNT                     (60)    // Number of your "pixels"
-
-
-
-#define delay_ms(ms) vTaskDelay((ms) / portTICK_PERIOD_MS)
-
-
-/**********************************************************/
 static const char *TAG = "ledStrip_audio";
 static const char *TAGN = "NOTE";
 
+
+/* Private macro -------------------------------------------------------------*/
+#define delay_ms(ms) vTaskDelay((ms) / portTICK_PERIOD_MS)
+
+
+
+
+
+/* Private variables ---------------------------------------------------------*/
 QueueHandle_t dataQueue;
 
+/* Private functions ---------------------------------------------------------*/
 
-/**********************************************************/
+
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
 static void task_01_adc()
 {
     int x;
@@ -99,7 +109,12 @@ static void task_01_adc()
     }
 }
 
-/**********************************************************/
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
 static void task_02()
 {
     while (1)
@@ -116,20 +131,18 @@ static void task_02()
 
 
 
-/**********************************************************/
 
-/**
- * @brief "rainbow" effect on a RGB strip (30 pixels - can be adjusted)
- *
- * This example shows how to use the "procedural generation" of colors.
- *
- * The pixel colors are calculated on the fly, which saves RAM
- * (especially with large displays).
- */
-void demo_strip(void *pvParameters)
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
+void task_ledStrip_write(void *pvParameters)
 {
     const uint8_t anim_step = 10;
     const uint8_t anim_max = 250;
+
+    /* Init WS2812 pin */
     gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
 
 
@@ -139,17 +152,16 @@ void demo_strip(void *pvParameters)
     ws2812_rgb_t color2 = WS2812_RGB(anim_max, 0, 0);
     uint8_t step2 = 0;
 
-    while (1)  
+    while (1)
     {
-
         color = color2;
         step = step2;
 
         // Start a data sequence (disables interrupts)
         ws2812_seq_start();
 
-        for (uint8_t i = 0; i < LEDSTRIP_LED_CNT; i++) {
-
+        for (uint8_t i = 0; i < LEDSTRIP_LED_CNT; i++)
+        {
             // send a color
             ws2812_seq_rgb(PIN_WS2812, color.num);
 
@@ -183,7 +195,11 @@ void demo_strip(void *pvParameters)
 }
 
 
-/**********************************************************/
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
 void app_main()
 {
     /* Set MCU CLK to 160 MHz */
@@ -231,7 +247,7 @@ void app_main()
     // xTaskCreate(task_02, "task_02", 1024, NULL, 5, NULL);
 
 
-    xTaskCreate(demo_strip, "demo_strip", 1024, NULL, 5, NULL);
+    xTaskCreate(task_ledStrip_write, "task_ledStrip_write", 1024, NULL, 5, NULL);
 
 
     // xTaskCreate(task2, "Task 2", configMINIMAL_STACK_SIZE, NULL, 1, &task2Handle);
