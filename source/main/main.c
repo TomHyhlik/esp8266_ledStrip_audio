@@ -37,15 +37,16 @@
 #define PIN_DBG1                             GPIO_NUM_5
 #define PIN_WS2812                           GPIO_NUM_4
 
-#define LEDSTRIP_LED_CNT                     (60)    // Number of "pixels"
+#define LEDSTRIP_LED_CNT                     (2)    // Number of "pixels"
 
 static const char *TAG = "ledStrip_audio";
-static const char *TAGN = "NOTE";
+
+#define ADC_SAMPLES_CNT                     (2000)
 
 
 /* Private macro -------------------------------------------------------------*/
-#define delay_ms(ms) vTaskDelay((ms) / portTICK_PERIOD_MS)
-
+#define DELAY_MS(ms)            vTaskDelay((ms) / portTICK_PERIOD_MS)
+#define DEBUG_PRINT(...)  printf(__VA_ARGS__)
 
 
 
@@ -62,50 +63,59 @@ QueueHandle_t dataQueue;
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
+uint64_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
+{
+    uint64_t sum = 0;
+    uint64_t mean;
+    int64_t sum_squared_deviations = 0;
+    uint64_t variance;
+
+    for (uint32_t i = 0; i < adcSampleCnt; i++)
+    {
+        sum += adcSamples[i];
+    }
+
+    mean = sum / adcSampleCnt;
+
+    // Calculate the sum of squared deviations
+    for (uint32_t i = 0; i < adcSampleCnt; i++) 
+    {
+        int32_t deviation = adcSamples[i] - mean;
+        sum_squared_deviations += deviation * deviation;
+    }
+
+    // Calculate the variance
+    variance = sum_squared_deviations / adcSampleCnt;
+
+    return variance;
+}
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
 static void task_01_adc()
 {
-    int x;
-    uint16_t adc_data[1000];
+    esp_err_t rsp;
+    uint16_t adc_data[ADC_SAMPLES_CNT];
 
-    // while (1) 
-    // {
-    //     if (ESP_OK == adc_read_fast(adc_data, 1000)) 
-    //     {
-    //         // for (x = 0; x < 100; x++) 
-    //         // {
-    //         //     printf("%d\n", adc_data[x]);
-    //         // }
-    //     }
-
-    //     // if (ESP_OK == adc_read(&adc_data[0])) 
-    //     // {
-    //     //     // ESP_LOGI(TAG, "adc read: %d\r\n", adc_data[0]);
-    //     // }
-
-
-    //     gpio_set_level(PIN_DBG1, 0);
-    //     gpio_set_level(PIN_DBG1, 1);
-
-    //     vTaskDelay(1000 / portTICK_RATE_MS);
-    // }
-
-
-    while (1)
+    while (1) 
     {
-        printf("Task_01\n");
+        gpio_set_level(PIN_DBG1, 1);
+        rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT);
+        gpio_set_level(PIN_DBG1, 0);
 
-        // if (ESP_OK == adc_read(&adc_sample))
-        // {
-        //     printf("adc read: %u\n", adc_sample);
-        // }
-        // // ESP_LOGI(TAGN, "Task halted");
+        if (ESP_OK != rsp)
+        {
+            DEBUG_PRINT("ERROR: ADC Data Sampling\n");
+            while (1);
+        }
 
-        gpio_set_level(PIN_LED_INTEGRATED, 0);
-        vTaskDelay(10 / portTICK_RATE_MS);
+        uint64_t variance = Calc_Variance(adc_data, ADC_SAMPLES_CNT);
+        DEBUG_PRINT("Variance: %u\n", (uint32_t)variance);
 
-        gpio_set_level(PIN_LED_INTEGRATED, 1);
-
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        // vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
 
@@ -121,7 +131,7 @@ static void task_02()
     {
         // ESP_LOGI(TAGN, "Task halted");
 
-        printf("----------------Task_02\n");
+        DEBUG_PRINT("----------------Task_02\n");
 
         vTaskDelay(500 / portTICK_RATE_MS);
     }
@@ -187,10 +197,10 @@ void task_ledStrip_write(void *pvParameters)
         ws2812_seq_end();
 
 
-        printf("----------------demo\n");
+        DEBUG_PRINT("----------------demo\n");
 
         // wait a bit
-        delay_ms(4);
+        DELAY_MS(400);
     }
 }
 
@@ -208,25 +218,25 @@ void app_main()
     /* Print chip information */
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
-    printf("This is ESP8266 chip with %d CPU cores, WiFi, ",
+    DEBUG_PRINT("This is ESP8266 chip with %d CPU cores, WiFi, ",
             chip_info.cores);
-    printf("silicon revision %d, ", chip_info.revision);
-    printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
+    DEBUG_PRINT("silicon revision %d, ", chip_info.revision);
+    DEBUG_PRINT("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
             (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
     rtc_cpu_freq_t rtcCpuFreq = rtc_clk_cpu_freq_get();
-    printf("CLK: ");
+    DEBUG_PRINT("CLK: ");
     switch (rtcCpuFreq)
     {
         case RTC_CPU_FREQ_80M:
-            printf("80");
+            DEBUG_PRINT("80");
             break;
         case RTC_CPU_FREQ_160M:
-            printf("160");
+            DEBUG_PRINT("160");
             break;
         default:
-            printf("Unknown");
+            DEBUG_PRINT("Unknown");
     }
-    printf(" MHz\n");
+    DEBUG_PRINT(" MHz\n");
 
     /* Init GPIO */
     gpio_set_direction(PIN_LED_INTEGRATED, GPIO_MODE_OUTPUT);
@@ -243,11 +253,11 @@ void app_main()
     ESP_ERROR_CHECK(adc_init(&adc_config));
 
     // 2. Create a adc task to read adc value
-    // xTaskCreate(task_01_adc, "task_01_adc", 4000, NULL, 5, NULL);
+    xTaskCreate(task_01_adc, "task_01_adc", 5000, NULL, 5, NULL);
     // xTaskCreate(task_02, "task_02", 1024, NULL, 5, NULL);
 
 
-    xTaskCreate(task_ledStrip_write, "task_ledStrip_write", 1024, NULL, 5, NULL);
+    // xTaskCreate(task_ledStrip_write, "task_ledStrip_write", 1024, NULL, 5, NULL);
 
 
     // xTaskCreate(task2, "Task 2", configMINIMAL_STACK_SIZE, NULL, 1, &task2Handle);
