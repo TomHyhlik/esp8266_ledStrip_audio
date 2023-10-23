@@ -41,14 +41,14 @@
 
 static const char *TAG = "ledStrip_audio";
 
-#define ADC_SAMPLES_CNT                     (2000)
+#define ADC_SAMPLES_CNT                     (20000)
 
 
 /* Private macro -------------------------------------------------------------*/
 #define DELAY_MS(ms)            vTaskDelay((ms) / portTICK_PERIOD_MS)
 #define DEBUG_PRINT(...)  printf(__VA_ARGS__)
 
-
+    
 
 
 /* Private variables ---------------------------------------------------------*/
@@ -99,6 +99,16 @@ static void task_01_adc()
 {
     esp_err_t rsp;
     uint16_t adc_data[ADC_SAMPLES_CNT];
+
+    DEBUG_PRINT("TASK %s ENTRY________________________________\n", __func__);
+
+    // while (1) 
+    // {
+    //     gpio_set_level(PIN_LED_INTEGRATED, 0);
+    //     vTaskDelay(100 / portTICK_RATE_MS);
+    //     gpio_set_level(PIN_LED_INTEGRATED, 1);
+    //     vTaskDelay(1000 / portTICK_RATE_MS);
+    // }
 
     while (1) 
     {
@@ -253,7 +263,7 @@ void app_main()
     ESP_ERROR_CHECK(adc_init(&adc_config));
 
     // 2. Create a adc task to read adc value
-    xTaskCreate(task_01_adc, "task_01_adc", 5000, NULL, 5, NULL);
+    xTaskCreate(task_01_adc, "task_01_adc", (ADC_SAMPLES_CNT*2) + 1000, NULL, 5, NULL);
     // xTaskCreate(task_02, "task_02", 1024, NULL, 5, NULL);
 
 
