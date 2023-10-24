@@ -2,9 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-
-#define PI      3.14159265358979323846
-
+#include <string.h>
 
 
 /*
@@ -46,7 +44,7 @@ void spectrScaledLog_band_GetFreqRange(FFT_PRECISION* frequencyScale, int freqBa
 
     for (int i = 0; i < freqBandCnt; i++)
     {        
-        frequencyScale[i] = 1 * exp10(start + ((FFT_PRECISION)(multiplier * i)));
+        frequencyScale[i] = 1 * pow(10, (start + ((FFT_PRECISION)(multiplier * i))));
         // printf("%d\t%.3f\n", (int)i, frequencyScale[i]);
     }
 }
@@ -91,7 +89,7 @@ void fourier_example()
     for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION)/BUFFER_EXTENSION_MULTIPLIER; i++) 
     {
          //2*PI*f*t
-        input[i] = 1 * sin(2 * PI * f * i/sample_rate);
+        input[i] = 1 * sin(2 * M_PI * f * i/sample_rate);
     }
 
     // printf("\nRaw data START =======\n");
