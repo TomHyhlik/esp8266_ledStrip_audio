@@ -74,6 +74,7 @@ void fourier_example()
         // input[i] = 1 * sin(2 * M_PI * f * i/sample_rate);
         input[i] = 1 * sin(2 * M_PI * f * i/sample_rate) +
                     1 * sin(2 * M_PI * f/2 * i/sample_rate) +
+                    1 * sin(2 * M_PI * f/10 * i/sample_rate) +
                     1 * sin(2 * M_PI * f*2 * i/sample_rate);
     }
 
@@ -92,11 +93,10 @@ void fourier_example()
     // Transform signal
     fft_forward(transformer, input);
 
-
-    printf("----------------\n");
+    /* Scale spectrum to log - use top value of the spectrum */
     {
-        FFT_PRECISION sum = 0;
         FFT_PRECISION cnt = 0;
+        FFT_PRECISION mag = 0;
 
         for (int band = 0; band < SPECTR_LOG_SCALE_BAND_cNT; band++)
         {
@@ -113,25 +113,28 @@ void fourier_example()
                 {
                     if (cnt == 0)
                     {
-                        i -= 2;
-                        freq = i / 2 * sample_rate / input_cnt;
-                        spectrumScaleLog_mag[band] = fft_getMag(&input[i]);
+                        if (i >= 2)
+                        {
+                            spectrumScaleLog_mag[band] = fft_getMag(&input[i-2]);
+                        }
                         break;
                     }
                     else
                     {
-                        spectrumScaleLog_mag[band] = sum / cnt;
+                        spectrumScaleLog_mag[band] = mag;
                     }
-                    sum = 0;
+                    mag = 0;
                     cnt = 0;
                     break;
                 }
 
-                FFT_PRECISION mag = fft_getMag(&input[i]);
+                FFT_PRECISION mag_current = fft_getMag(&input[i]);
 
-                // printf("%d\tFreq:\t%.1f, MAG:\t%d\n", i, freq, (int)(mag*1000));
+                if (mag_current > mag)
+                {
+                    mag = mag_current;
+                }
 
-                sum += mag;
                 cnt += 1;
 
                 if (band >= SPECTR_LOG_SCALE_BAND_cNT) break; // rm later
@@ -140,46 +143,55 @@ void fourier_example()
     }
 
 
+    // /* Scale spectrum to log - averaging */
+    // {
+    //     FFT_PRECISION sum = 0;
+    //     FFT_PRECISION cnt = 0;
 
-    {
-        // // Handle the spectrum
-        // for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
-        // {
-        //     /* Calc FREQUENCY */
-        //     FFT_PRECISION freq = i / 2 * sample_rate / input_cnt;
+    //     for (int band = 0; band < SPECTR_LOG_SCALE_BAND_cNT; band++)
+    //     {
+    //         for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
+    //         {
+    //             /* Calc FREQUENCY */
+    //             FFT_PRECISION freq = i / 2 * sample_rate / input_cnt;
 
-        //     if (freq < spectrumScaleLog_freq[0])
-        //     {
-        //         continue;
-        //     }
-        //     else if (freq > spectrumScaleLog_freq[SPECTR_LOG_SCALE_BAND_cNT - 1])
-        //     {
-        //         break;
-        //     }
+    //             if (freq < spectrumScaleLog_freq[band])
+    //             {
+    //                 continue;
+    //             }
+    //             else if (freq >= spectrumScaleLog_freq[band + 1])
+    //             {
+    //                 if (cnt == 0)
+    //                 {
+    //                     i -= 2;
+    //                     freq = i / 2 * sample_rate / input_cnt;
+    //                     spectrumScaleLog_mag[band] = fft_getMag(&input[i]);
+    //                     break;
+    //                 }
+    //                 else
+    //                 {
+    //                     spectrumScaleLog_mag[band] = sum / cnt;
+    //                 }
+    //                 sum = 0;
+    //                 cnt = 0;
+    //                 break;
+    //             }
 
-        //     /* Calc MAGNITUDE */
-        //     FFT_PRECISION cos_comp = input[i];
-        //     FFT_PRECISION sin_comp = input[i+1];
-        //     FFT_PRECISION mag = 1000 * sqrt((cos_comp * cos_comp) + (sin_comp * sin_comp));
-            
-        //     // printf("%d\tFreq:\t%.1f, MAG:\t%d\n", i, freq, (int)(mag*1000));
+    //             FFT_PRECISION mag = fft_getMag(&input[i]);
+
+    //             // printf("%d\tFreq:\t%.1f, MAG:\t%d\n", i, freq, (int)(mag*1000));
+
+    //             sum += mag;
+    //             cnt += 1;
+
+    //             if (band >= SPECTR_LOG_SCALE_BAND_cNT) break; // rm later
+    //         }
+    //     }
+    // }
 
 
-        //     if (band >= SPECTR_LOG_SCALE_BAND_cNT) break; // rm later
 
-        //     sum += mag;
-        //     cnt += 1;
 
-        //     if (freq >= spectrumScaleLog_freq[band + 1])
-        //     {
-        //         spectrumScaleLog_mag[band] = sum / cnt;
-                
-        //         band++;
-        //         sum = 0;
-        //         cnt = 0;
-        //     }
-        // }
-    }
 
 //    Print output
     for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
@@ -192,7 +204,7 @@ void fourier_example()
         // printf("Freq:%f,SIN:%f\n", freq, sin_comp);
 
         /* Print */
-        if (freq >= 100 && freq <= 2500)
+        if (freq >= 50 && freq <= 2500)
         {
             // printf("Freq:\t%f, MAG:\t%f\n", freq, mag);
             printf("%d\t%.1f\t%d\n", i, freq, (int)(mag));
