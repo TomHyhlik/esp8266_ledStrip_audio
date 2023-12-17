@@ -73,6 +73,7 @@ QueueHandle_t dataQueue;
 void spectrScaledLog_band_GetFreqRange(FFT_PRECISION* frequencyScale, int freqBandCnt);
 
 
+void hsv_to_rgb(uint8_t h, uint8_t s, uint8_t v, ws2812_rgb_t *rgb) ;
 
 
 
@@ -386,70 +387,6 @@ static void task_02()
     }
 }
 
-
-/**************************************************************************//**
-* @brief   Function name
-* @param   List of parameters and related description
-* @details Detailed description of implemented functionality
-*******************************************************************************/
-void hsv_to_rgb(double h, double s, double v, unsigned char *r, unsigned char *g, unsigned char *b) 
-{
-    // Normalize HSV values
-    h = fmod(h, 360.0);  // Ensure hue is in the range [0, 360)
-    s = fmax(0, fmin(s, 100)) / 100.0;  // Ensure saturation is in the range [0, 1]
-    v = fmax(0, fmin(v, 100)) / 100.0;  // Ensure value is in the range [0, 1]
-
-    int i;
-    double f, p, q, t;
-
-    if (s == 0) {
-        // Achromatic (gray) color
-        *r = *g = *b = (unsigned char)(v * 255);
-        return;
-    }
-
-    h /= 60.0;  // sector 0 to 5
-    i = floor(h);
-    f = h - i;  // factorial part of h
-    p = v * (1 - s);
-    q = v * (1 - s * f);
-    t = v * (1 - s * (1 - f));
-
-    switch (i) {
-        case 0:
-            *r = (unsigned char)round(v * 255);
-            *g = (unsigned char)round(t * 255);
-            *b = (unsigned char)round(p * 255);
-            break;
-        case 1:
-            *r = (unsigned char)round(q * 255);
-            *g = (unsigned char)round(v * 255);
-            *b = (unsigned char)round(p * 255);
-            break;
-        case 2:
-            *r = (unsigned char)round(p * 255);
-            *g = (unsigned char)round(v * 255);
-            *b = (unsigned char)round(t * 255);
-            break;
-        case 3:
-            *r = (unsigned char)round(p * 255);
-            *g = (unsigned char)round(q * 255);
-            *b = (unsigned char)round(v * 255);
-            break;
-        case 4:
-            *r = (unsigned char)round(t * 255);
-            *g = (unsigned char)round(p * 255);
-            *b = (unsigned char)round(v * 255);
-            break;
-        default:  // case 5:
-            *r = (unsigned char)round(v * 255);
-            *g = (unsigned char)round(p * 255);
-            *b = (unsigned char)round(q * 255);
-            break;
-    }
-}
-
-
 /**************************************************************************//**
 * @brief   Function name
 * @param   List of parameters and related description
@@ -474,35 +411,45 @@ void task_audioIndicator_variance(void *pvParameters)
     gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
 
 
-    for (h = 0; h < 1; h += 0.1)
+    while (1)
     {
-        /* Sample data via ADC */
-        // gpio_set_level(PIN_DBG1, 1);
-        // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
-        // gpio_set_level(PIN_DBG1, 0);
-        // if (ESP_OK != rsp)
-        // {
-        //     DEBUG_PRINT("ERROR: ADC Data Sampling\n");
-        // }
 
-        // Start a data sequence (disables interrupts)
-
-
-        hsv_to_rgb(h, 1.0, 1.0, &color.r, &color.g, &color.b);
-
-        for (uint32_t i = 0; i < LEDSTRIP_LED_CNT; i++)
+        for (h = 0; h < 256; h += 1)
         {
-            pixels[i].num = color.num;
+            /* Sample data via ADC */
+            // gpio_set_level(PIN_DBG1, 1);
+            // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+            // gpio_set_level(PIN_DBG1, 0);
+            // if (ESP_OK != rsp)
+            // {
+            //     DEBUG_PRINT("ERROR: ADC Data Sampling\n");
+            // }
+
+
+
+            // color.r = 200 * h;
+            // color.g = 0;
+            // color.b = 0;
+
+            hsv_to_rgb(h, 0xff, 0xf, &color);
+
+            for (int i = 0; i < LEDSTRIP_LED_CNT; i++)
+            {
+                pixels[i].num = color.num;
+            }
+
+            DEBUG_PRINT("task_ledStrip_write:\t\t%X\t\t%X\t%X\t\t%x\n", 
+                            color.r, color.g, color.b, color.num);
+
+            ws2812_seq_start();
+            ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
+            ws2812_seq_end();
+
+
+            // wait a bit
+            DELAY_MS(10);
         }
 
-        ws2812_seq_start();
-        ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
-        ws2812_seq_end();
-
-        DEBUG_PRINT("----------------task_ledStrip_write\n");
-
-        // wait a bit
-        DELAY_MS(100);
     }
 }
 
@@ -565,6 +512,62 @@ void task_ledStrip_rainbow(void *pvParameters)
 
         // wait a bit
         DELAY_MS(10);
+    }
+}
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
+void hsv_to_rgb(uint8_t h, uint8_t s, uint8_t v, ws2812_rgb_t *rgb) 
+{
+    uint8_t region, remainder, p, q, t;
+
+    if (s == 0) {
+        // Achromatic (gray)
+        rgb->r = rgb->g = rgb->b = v;
+        return;
+    }
+
+    region = h / 43;
+    remainder = (h - (region * 43)) * 6;
+
+    p = (v * (255 - s)) >> 8;
+    q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+    t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+
+    switch (region) {
+        case 0:  // Red
+            rgb->r = v;
+            rgb->g = t;
+            rgb->b = p;
+            break;
+        case 1:  // Yellow
+            rgb->r = q;
+            rgb->g = v;
+            rgb->b = p;
+            break;
+        case 2:  // Green
+            rgb->r = p;
+            rgb->g = v;
+            rgb->b = t;
+            break;
+        case 3:  // Cyan
+            rgb->r = p;
+            rgb->g = q;
+            rgb->b = v;
+            break;
+        case 4:  // Blue
+            rgb->r = t;
+            rgb->g = p;
+            rgb->b = v;
+            break;
+        default:  // Magenta
+            rgb->r = v;
+            rgb->g = p;
+            rgb->b = q;
+            break;
     }
 }
 
