@@ -55,6 +55,10 @@ static const char *TAG = "ledStrip_audio";
 #define ADC_SAMPLES_CNT                     (20000)
 
 
+
+#define ADC_SAMPLES_CNT_VARIANCE           (2000)
+
+
 /* Private macro -------------------------------------------------------------*/
 #define DELAY_MS(ms)            vTaskDelay((ms) / portTICK_PERIOD_MS)
 #define DEBUG_PRINT(...)  printf(__VA_ARGS__)
@@ -383,6 +387,67 @@ static void task_02()
 }
 
 
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
+void hsv_to_rgb(double h, double s, double v, unsigned char *r, unsigned char *g, unsigned char *b) 
+{
+    // Normalize HSV values
+    h = fmod(h, 360.0);  // Ensure hue is in the range [0, 360)
+    s = fmax(0, fmin(s, 100)) / 100.0;  // Ensure saturation is in the range [0, 1]
+    v = fmax(0, fmin(v, 100)) / 100.0;  // Ensure value is in the range [0, 1]
+
+    int i;
+    double f, p, q, t;
+
+    if (s == 0) {
+        // Achromatic (gray) color
+        *r = *g = *b = (unsigned char)(v * 255);
+        return;
+    }
+
+    h /= 60.0;  // sector 0 to 5
+    i = floor(h);
+    f = h - i;  // factorial part of h
+    p = v * (1 - s);
+    q = v * (1 - s * f);
+    t = v * (1 - s * (1 - f));
+
+    switch (i) {
+        case 0:
+            *r = (unsigned char)round(v * 255);
+            *g = (unsigned char)round(t * 255);
+            *b = (unsigned char)round(p * 255);
+            break;
+        case 1:
+            *r = (unsigned char)round(q * 255);
+            *g = (unsigned char)round(v * 255);
+            *b = (unsigned char)round(p * 255);
+            break;
+        case 2:
+            *r = (unsigned char)round(p * 255);
+            *g = (unsigned char)round(v * 255);
+            *b = (unsigned char)round(t * 255);
+            break;
+        case 3:
+            *r = (unsigned char)round(p * 255);
+            *g = (unsigned char)round(q * 255);
+            *b = (unsigned char)round(v * 255);
+            break;
+        case 4:
+            *r = (unsigned char)round(t * 255);
+            *g = (unsigned char)round(p * 255);
+            *b = (unsigned char)round(v * 255);
+            break;
+        default:  // case 5:
+            *r = (unsigned char)round(v * 255);
+            *g = (unsigned char)round(p * 255);
+            *b = (unsigned char)round(q * 255);
+            break;
+    }
+}
 
 
 /**************************************************************************//**
@@ -392,76 +457,52 @@ static void task_02()
 *******************************************************************************/
 void task_audioIndicator_variance(void *pvParameters)
 {
-    const uint8_t anim_step = 10;
-    const uint8_t anim_max = 250;
     esp_err_t rsp;
-    uint16_t adc_data[100];
+    uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
+    ws2812_rgb_t color;
 
+    ws2812_rgb_t pixels[LEDSTRIP_LED_CNT];
+
+
+    double h, s, v;
+
+
+    memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
+
+    
     /* Init WS2812 pin */
     gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
 
 
-    ws2812_rgb_t color = WS2812_RGB(anim_max, 0, 0);
-    uint8_t step = 0;
-
-    ws2812_rgb_t color2 = WS2812_RGB(anim_max, 0, 0);
-    uint8_t step2 = 0;
-
-    while (1)
+    for (h = 0; h < 1; h += 0.1)
     {
-
-
-        // printf("Microphone sampling.....................\n");
-
-        // /* Sample data via ADC */
+        /* Sample data via ADC */
         // gpio_set_level(PIN_DBG1, 1);
-        // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT);
+        // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
         // gpio_set_level(PIN_DBG1, 0);
-
-
         // if (ESP_OK != rsp)
         // {
         //     DEBUG_PRINT("ERROR: ADC Data Sampling\n");
-        //     while (1);
         // }
 
-        color = color2;
-        step = step2;
-
         // Start a data sequence (disables interrupts)
-        ws2812_seq_start();
 
-        for (uint8_t i = 0; i < LEDSTRIP_LED_CNT; i++)
+
+        hsv_to_rgb(h, 1.0, 1.0, &color.r, &color.g, &color.b);
+
+        for (uint32_t i = 0; i < LEDSTRIP_LED_CNT; i++)
         {
-            // send a color
-            ws2812_seq_rgb(PIN_WS2812, color.num);
-
-            // now we have a few hundred nanoseconds
-            // to calculate the next color
-
-            if (i == 1) {
-                color2 = color;
-                step2 = step;
-            }
-
-            switch (step) {
-                case 0: color.g += anim_step; if (color.g >= anim_max) step++;  break;
-                case 1: color.r -= anim_step; if (color.r == 0) step++; break;
-                case 2: color.b += anim_step; if (color.b >= anim_max) step++; break;
-                case 3: color.g -= anim_step; if (color.g == 0) step++; break;
-                case 4: color.r += anim_step; if (color.r >= anim_max) step++; break;
-                case 5: color.b -= anim_step; if (color.b == 0) step = 0; break;
-            }
+            pixels[i].num = color.num;
         }
 
-        // End the data sequence, display colors (interrupts are restored)
+        ws2812_seq_start();
+        ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
         ws2812_seq_end();
-
 
         DEBUG_PRINT("----------------task_ledStrip_write\n");
 
         // wait a bit
-        DELAY_MS(5);
+        DELAY_MS(100);
     }
 }
 
@@ -580,7 +621,7 @@ void app_main()
 #endif
 
 #if defined(APP_TYPE_AUDIO_VARIANCE)
-    xTaskCreate(task_audioIndicator_variance, "task_audioIndicator_variance", 10*1024, NULL, 5, NULL);
+    xTaskCreate(task_audioIndicator_variance, "task_audioIndicator_variance", 20*1024, NULL, 5, NULL);
 #endif
 
 #if defined(APP_TYPE_RAINBOW)
