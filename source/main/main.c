@@ -34,11 +34,21 @@
 
 
 
-#define PIN_LED_INTEGRATED                   GPIO_NUM_2
-#define PIN_DBG1                             GPIO_NUM_5
-#define PIN_WS2812                           GPIO_NUM_4
 
-#define LEDSTRIP_LED_CNT                     (2)    // Number of "pixels"
+////////////////////// CONFIGURATION START  //////////////////////
+// #define APP_TYPE_RAINBOW
+#define APP_TYPE_AUDIO_VARIANCE
+// #define APP_TYPE_AUDIO_SPECTRUM
+
+////////////////////// CONFIGURATION END     //////////////////////
+
+
+
+#define PIN_LED_INTEGRATED                   GPIO_NUM_2
+#define PIN_DBG1                             GPIO_NUM_0
+#define PIN_WS2812                           GPIO_NUM_5
+
+#define LEDSTRIP_LED_CNT                     (60)    // Number of "pixels"
 
 static const char *TAG = "ledStrip_audio";
 
@@ -80,6 +90,22 @@ FFT_PRECISION fft_getMag(FFT_PRECISION* input);
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
+void printDouble(double v, int decimalDigits)
+{
+    int i = 1;
+    int intPart, fractPart;
+    for (;decimalDigits!=0; i*=10, decimalDigits--);
+    intPart = (int)v;
+    fractPart = (int)((v-(double)(int)v)*i);
+    if(fractPart < 0) fractPart *= -1;
+    printf("%i.%i", intPart, fractPart);
+}
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
 static void task_01_adc()
 {
     esp_err_t rsp;
@@ -97,17 +123,12 @@ static void task_01_adc()
     // }
 
 
-
-
-
-
-
     FFT_PRECISION spectrumScaleLog_freq[SPECTR_LOG_SCALE_BAND_cNT];
     FFT_PRECISION spectrumScaleLog_mag[SPECTR_LOG_SCALE_BAND_cNT];
 
     // Construct input signal
     FFT_PRECISION sample_rate = 200000; // signal sampling rate
-    FFT_PRECISION signal_length_ms = 1;//50;
+    FFT_PRECISION signal_length_ms = 2;//50;
     FFT_PRECISION f = 1010;    // frequency of the artifical signal
 
 
@@ -129,32 +150,16 @@ static void task_01_adc()
 
 
 
-
-
-
     /* Initialize fourier transformer */
     FFTTransformer* transformer = create_fft_transformer(input_cnt, FFT_SCALED_OUTPUT);
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     while (1) 
     {
+        printf("Microphone sampling.....................\n");
+
+        /* Sample data via ADC */
         gpio_set_level(PIN_DBG1, 1);
         rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT);
         gpio_set_level(PIN_DBG1, 0);
@@ -170,119 +175,125 @@ static void task_01_adc()
 
 
 
+    
+        /* Set the input data */
+        memset(input, 0, sizeof(input));
+        for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION)/BUFFER_EXTENSION_MULTIPLIER; i++) 
         {
+            //2*PI*f*t
+            // input[i] = 1 * sin(2 * M_PI * f * i/sample_rate);
+            input[i] = 1 * sin(2 * M_PI * f * i/sample_rate) +
+                        1 * sin(2 * M_PI * f/2 * i/sample_rate) +
+                        1 * sin(2 * M_PI * f/10 * i/sample_rate) +
+                        1 * sin(2 * M_PI * f*2 * i/sample_rate);
+        }
+
+        // printf("\nRaw data START =======\n");
+        // for(int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i ++) 
+        // {
+        //     printf("Raw_sample[%d] =\t%lf\n,", i, input[i]);
+        // }
+        // printf("\nRaw data END =======\n");
 
 
 
 
 
-            
-            memset(input, 0, sizeof(input));
+        // Transform signal
+        fft_forward(transformer, input);
 
 
 
-            // FFT_PRECISION * input = myinput;
-            // int n = sizeof(myinput)/sizeof(double);
+        /* Scale spectrum to log - use top value of the spectrum */
+        {
+            FFT_PRECISION cnt = 0;
+            FFT_PRECISION mag = 0;
 
-            // printf("\nTime data START =======\n");
-            // for(int i = 0; i < n; i ++) 
-            //     printf("%lf,",i/sample_rate);
-            // printf("\nTime data END =======\n");
-
-            /* Set the input data */
-            for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION)/BUFFER_EXTENSION_MULTIPLIER; i++) 
+            for (int band = 0; band < SPECTR_LOG_SCALE_BAND_cNT; band++)
             {
-                //2*PI*f*t
-                // input[i] = 1 * sin(2 * M_PI * f * i/sample_rate);
-                input[i] = 1 * sin(2 * M_PI * f * i/sample_rate) +
-                            1 * sin(2 * M_PI * f/2 * i/sample_rate) +
-                            1 * sin(2 * M_PI * f/10 * i/sample_rate) +
-                            1 * sin(2 * M_PI * f*2 * i/sample_rate);
+                for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
+                {
+                    /* Calc FREQUENCY */
+                    FFT_PRECISION freq = i / 2 * sample_rate / input_cnt;
+
+                    if (freq < spectrumScaleLog_freq[band])
+                    {
+                        continue;
+                    }
+                    else if (freq >= spectrumScaleLog_freq[band + 1])
+                    {
+                        if (cnt == 0)
+                        {
+                            if (i >= 2)
+                            {
+                                spectrumScaleLog_mag[band] = fft_getMag(&input[i-2]);
+                            }
+                            break;
+                        }
+                        else
+                        {
+                            spectrumScaleLog_mag[band] = mag;
+                        }
+                        mag = 0;
+                        cnt = 0;
+                        break;
+                    }
+
+                    FFT_PRECISION mag_current = fft_getMag(&input[i]);
+
+                    if (mag_current > mag)
+                    {
+                        mag = mag_current;
+                    }
+
+                    cnt += 1;
+
+                    if (band >= SPECTR_LOG_SCALE_BAND_cNT) break; // rm later
+                }
             }
-
-            // printf("\nRaw data START =======\n");
-            // for(int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i ++) 
-            // {
-            //     printf("Raw_sample[%d] =\t%lf\n,", i, input[i]);
-            // }
-            // printf("\nRaw data END =======\n");
-
-
-
-
-
-            // Transform signal
-            // fft_forward(transformer, input);
-
-
-
-            /* Scale spectrum to log - use top value of the spectrum */
-            // {
-            //     FFT_PRECISION cnt = 0;
-            //     FFT_PRECISION mag = 0;
-
-            //     for (int band = 0; band < SPECTR_LOG_SCALE_BAND_cNT; band++)
-            //     {
-            //         for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
-            //         {
-            //             /* Calc FREQUENCY */
-            //             FFT_PRECISION freq = i / 2 * sample_rate / input_cnt;
-
-            //             if (freq < spectrumScaleLog_freq[band])
-            //             {
-            //                 continue;
-            //             }
-            //             else if (freq >= spectrumScaleLog_freq[band + 1])
-            //             {
-            //                 if (cnt == 0)
-            //                 {
-            //                     if (i >= 2)
-            //                     {
-            //                         spectrumScaleLog_mag[band] = fft_getMag(&input[i-2]);
-            //                     }
-            //                     break;
-            //                 }
-            //                 else
-            //                 {
-            //                     spectrumScaleLog_mag[band] = mag;
-            //                 }
-            //                 mag = 0;
-            //                 cnt = 0;
-            //                 break;
-            //             }
-
-            //             FFT_PRECISION mag_current = fft_getMag(&input[i]);
-
-            //             if (mag_current > mag)
-            //             {
-            //                 mag = mag_current;
-            //             }
-
-            //             cnt += 1;
-
-            //             if (band >= SPECTR_LOG_SCALE_BAND_cNT) break; // rm later
-            //         }
-            //     }
-            // }
-
-
-
-
-
         }
 
 
 
-        vTaskDelay(20 / portTICK_RATE_MS);
+
+        /* Print output */
+        for (int i = 0; i < sizeof(input)/sizeof(FFT_PRECISION); i += 2)
+        {
+            FFT_PRECISION freq = i / 2 * sample_rate / input_cnt;
+            FFT_PRECISION cos_comp = input[i];
+            FFT_PRECISION sin_comp = input[i+1];
+            FFT_PRECISION mag = 1000 * sqrt((cos_comp * cos_comp) + (sin_comp * sin_comp));
+            // printf("Freq:%f,COS:%f\n", freq, cos_comp);
+            // printf("Freq:%f,SIN:%f\n", freq, sin_comp);
+
+            /* Print */
+            if (freq >= 50 && freq <= 2500)
+            {
+                printf("%d\t%.1f\t%d\n", i, freq, (int)(mag));
+            }
+        }
+
+        printf("---------- Spectrum Log Scaled ----------\n");
+        for (int i = 0; i < SPECTR_LOG_SCALE_BAND_cNT; i++)
+        {
+            // printf("%d\t%.1f\t%.1f\n", (int)i, spectrumScaleLog_freq[i], spectrumScaleLog_mag[i]);
+
+            printf("%d\t", (int)i); 
+            printDouble(spectrumScaleLog_freq[i], 2);
+            printf("\t");
+            printDouble(spectrumScaleLog_mag[i], 2);
+            printf("\n");
+        }
+        
+        free_fft_transformer(transformer);
+        printf("---------- wrapped fourier transform example end ----------\n");
 
 
-        printf("***\n");
+            
 
 
-        // uint64_t variance = Calc_Variance(adc_data, ADC_SAMPLES_CNT);
-        // DEBUG_PRINT("Variance: %u\n", (uint32_t)variance);
 
-        // vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
 
@@ -374,14 +385,92 @@ static void task_02()
 
 
 
-
-
 /**************************************************************************//**
 * @brief   Function name
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
-void task_ledStrip_write(void *pvParameters)
+void task_audioIndicator_variance(void *pvParameters)
+{
+    const uint8_t anim_step = 10;
+    const uint8_t anim_max = 250;
+    esp_err_t rsp;
+    uint16_t adc_data[100];
+
+    /* Init WS2812 pin */
+    gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
+
+
+    ws2812_rgb_t color = WS2812_RGB(anim_max, 0, 0);
+    uint8_t step = 0;
+
+    ws2812_rgb_t color2 = WS2812_RGB(anim_max, 0, 0);
+    uint8_t step2 = 0;
+
+    while (1)
+    {
+
+
+        // printf("Microphone sampling.....................\n");
+
+        // /* Sample data via ADC */
+        // gpio_set_level(PIN_DBG1, 1);
+        // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT);
+        // gpio_set_level(PIN_DBG1, 0);
+
+
+        // if (ESP_OK != rsp)
+        // {
+        //     DEBUG_PRINT("ERROR: ADC Data Sampling\n");
+        //     while (1);
+        // }
+
+        color = color2;
+        step = step2;
+
+        // Start a data sequence (disables interrupts)
+        ws2812_seq_start();
+
+        for (uint8_t i = 0; i < LEDSTRIP_LED_CNT; i++)
+        {
+            // send a color
+            ws2812_seq_rgb(PIN_WS2812, color.num);
+
+            // now we have a few hundred nanoseconds
+            // to calculate the next color
+
+            if (i == 1) {
+                color2 = color;
+                step2 = step;
+            }
+
+            switch (step) {
+                case 0: color.g += anim_step; if (color.g >= anim_max) step++;  break;
+                case 1: color.r -= anim_step; if (color.r == 0) step++; break;
+                case 2: color.b += anim_step; if (color.b >= anim_max) step++; break;
+                case 3: color.g -= anim_step; if (color.g == 0) step++; break;
+                case 4: color.r += anim_step; if (color.r >= anim_max) step++; break;
+                case 5: color.b -= anim_step; if (color.b == 0) step = 0; break;
+            }
+        }
+
+        // End the data sequence, display colors (interrupts are restored)
+        ws2812_seq_end();
+
+
+        DEBUG_PRINT("----------------task_ledStrip_write\n");
+
+        // wait a bit
+        DELAY_MS(5);
+    }
+}
+
+/**************************************************************************//**
+* @brief   task_ledStrip_rainbow
+* @param   None
+* @details Task that shows moving rainbow on the strip
+*******************************************************************************/
+void task_ledStrip_rainbow(void *pvParameters)
 {
     const uint8_t anim_step = 10;
     const uint8_t anim_max = 250;
@@ -431,13 +520,12 @@ void task_ledStrip_write(void *pvParameters)
         ws2812_seq_end();
 
 
-        DEBUG_PRINT("----------------demo\n");
+        DEBUG_PRINT("----------------task_ledStrip_write\n");
 
         // wait a bit
-        DELAY_MS(400);
+        DELAY_MS(10);
     }
 }
-
 
 /**************************************************************************//**
 * @brief   Function name
@@ -486,15 +574,23 @@ void app_main()
     adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
     ESP_ERROR_CHECK(adc_init(&adc_config));
 
-    // 2. Create a adc task to read adc value
+
+#if defined(APP_TYPE_AUDIO_SPECTRUM)
     xTaskCreate(task_01_adc, "task_01_adc", (ADC_SAMPLES_CNT*2) + 25000, NULL, 5, NULL);
-    // xTaskCreate(task_02, "task_02", 1024, NULL, 5, NULL);
+#endif
 
+#if defined(APP_TYPE_AUDIO_VARIANCE)
+    xTaskCreate(task_audioIndicator_variance, "task_audioIndicator_variance", 10*1024, NULL, 5, NULL);
+#endif
 
-    // xTaskCreate(task_ledStrip_write, "task_ledStrip_write", 1024, NULL, 5, NULL);
+#if defined(APP_TYPE_RAINBOW)
+    xTaskCreate(task_ledStrip_rainbow, "task_ledStrip_rainbow", 1024, NULL, 5, NULL);
+#endif
 
 
     // xTaskCreate(task2, "Task 2", configMINIMAL_STACK_SIZE, NULL, 1, &task2Handle);
 
 }
 /**********************************************************/
+
+
