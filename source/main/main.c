@@ -341,12 +341,12 @@ void spectrScaledLog_band_GetFreqRange(FFT_PRECISION* frequencyScale, int freqBa
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
-uint64_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
+uint32_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
 {
     uint64_t sum = 0;
     uint64_t mean;
     int64_t sum_squared_deviations = 0;
-    uint64_t variance;
+    uint32_t variance;
 
     for (uint32_t i = 0; i < adcSampleCnt; i++)
     {
@@ -356,7 +356,7 @@ uint64_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
     mean = sum / adcSampleCnt;
 
     // Calculate the sum of squared deviations
-    for (uint32_t i = 0; i < adcSampleCnt; i++) 
+    for (uint32_t i = 0; i < adcSampleCnt; i++)
     {
         int32_t deviation = adcSamples[i] - mean;
         sum_squared_deviations += deviation * deviation;
@@ -397,35 +397,28 @@ void task_audioIndicator_variance(void *pvParameters)
     esp_err_t rsp;
     uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
     ws2812_rgb_t color;
-
     ws2812_rgb_t pixels[LEDSTRIP_LED_CNT];
-
-
     double h, s, v;
 
-
     memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
-
     
     /* Init WS2812 pin */
     gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
 
-
     while (1)
     {
-
         for (h = 0; h < 256; h += 1)
         {
             /* Sample data via ADC */
-            // gpio_set_level(PIN_DBG1, 1);
-            // rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
-            // gpio_set_level(PIN_DBG1, 0);
-            // if (ESP_OK != rsp)
-            // {
-            //     DEBUG_PRINT("ERROR: ADC Data Sampling\n");
-            // }
+            gpio_set_level(PIN_DBG1, 1);
+            rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+            gpio_set_level(PIN_DBG1, 0);
+            if (ESP_OK != rsp)
+            {
+                DEBUG_PRINT("ERROR: ADC Data Sampling\n");
+            }
 
-
+            uint32_t variance = Calc_Variance(adc_data, ADC_SAMPLES_CNT_VARIANCE);
 
             // color.r = 200 * h;
             // color.g = 0;
@@ -438,8 +431,11 @@ void task_audioIndicator_variance(void *pvParameters)
                 pixels[i].num = color.num;
             }
 
-            DEBUG_PRINT("task_ledStrip_write:\t\t%X\t\t%X\t%X\t\t%x\n", 
-                            color.r, color.g, color.b, color.num);
+            // DEBUG_PRINT("task_ledStrip_write:\t\t%X\t\t%X\t%X\t\t%x\n", 
+            //                 color.r, color.g, color.b, color.num);
+
+            DEBUG_PRINT("variance: %x\n", variance);
+
 
             ws2812_seq_start();
             ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
@@ -447,7 +443,7 @@ void task_audioIndicator_variance(void *pvParameters)
 
 
             // wait a bit
-            DELAY_MS(10);
+            // DELAY_MS(10);
         }
 
     }
