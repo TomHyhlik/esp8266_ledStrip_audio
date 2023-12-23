@@ -34,7 +34,6 @@
 
 
 
-
 ////////////////////// CONFIGURATION START  //////////////////////
 // #define APP_TYPE_RAINBOW
 #define APP_TYPE_AUDIO_VARIANCE
@@ -48,7 +47,7 @@
 #define PIN_DBG1                             GPIO_NUM_0
 #define PIN_WS2812                           GPIO_NUM_5
 
-#define LEDSTRIP_LED_CNT                     (60)    // Number of "pixels"
+#define LEDSTRIP_LED_CNT                     (4)    // Number of "pixels"
 
 static const char *TAG = "ledStrip_audio";
 
@@ -341,12 +340,13 @@ void spectrScaledLog_band_GetFreqRange(FFT_PRECISION* frequencyScale, int freqBa
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
-uint32_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
+double calculate_standardDeviation(uint16_t* adcSamples, uint32_t adcSampleCnt)
 {
-    uint64_t sum = 0;
-    uint64_t mean;
+    double sum = 0;
+    double mean;
     int64_t sum_squared_deviations = 0;
-    uint32_t variance;
+    double variance = 0;
+    double standardDeviation = 0;
 
     for (uint32_t i = 0; i < adcSampleCnt; i++)
     {
@@ -358,17 +358,21 @@ uint32_t Calc_Variance(uint16_t* adcSamples, uint32_t adcSampleCnt)
     // Calculate the sum of squared deviations
     for (uint32_t i = 0; i < adcSampleCnt; i++)
     {
-        int32_t deviation = adcSamples[i] - mean;
+        double deviation = adcSamples[i] - mean;
         sum_squared_deviations += deviation * deviation;
     }
 
     // Calculate the variance
     variance = sum_squared_deviations / adcSampleCnt;
 
-    return variance;
+
+    if (variance != 0)
+    {
+        standardDeviation = sqrt(variance);
+    }
+
+    return standardDeviation;
 }
-
-
 
 /**************************************************************************//**
 * @brief   Function name
@@ -398,7 +402,6 @@ void task_audioIndicator_variance(void *pvParameters)
     uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
     ws2812_rgb_t color;
     ws2812_rgb_t pixels[LEDSTRIP_LED_CNT];
-    double h, s, v;
 
     memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
     
@@ -407,7 +410,7 @@ void task_audioIndicator_variance(void *pvParameters)
 
     while (1)
     {
-        for (h = 0; h < 256; h += 1)
+        for (int h = 0; h < 0xff; h += 1)
         {
             /* Sample data via ADC */
             gpio_set_level(PIN_DBG1, 1);
@@ -418,24 +421,21 @@ void task_audioIndicator_variance(void *pvParameters)
                 DEBUG_PRINT("ERROR: ADC Data Sampling\n");
             }
 
-            uint32_t variance = Calc_Variance(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+            double stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
 
-            // color.r = 200 * h;
+            // color.r = 0;
             // color.g = 0;
-            // color.b = 0;
+            // color.b = h;
 
-            hsv_to_rgb(h, 0xff, 0xf, &color);
+            hsv_to_rgb(h, 0xff, 0xff, &color.num);
 
             for (int i = 0; i < LEDSTRIP_LED_CNT; i++)
             {
                 pixels[i].num = color.num;
             }
 
-            // DEBUG_PRINT("task_ledStrip_write:\t\t%X\t\t%X\t%X\t\t%x\n", 
-            //                 color.r, color.g, color.b, color.num);
-
-            DEBUG_PRINT("variance: %x\n", variance);
-
+            DEBUG_PRINT("task_ledStrip_write:\t\t%X\t\t%X\t%X\t\t%x\t%d.%d\n", 
+                            color.r, color.g, color.b, color.num, (int)stdDev, (int)(stdDev*1000));
 
             ws2812_seq_start();
             ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
