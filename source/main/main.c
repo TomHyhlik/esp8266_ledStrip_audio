@@ -35,13 +35,19 @@
 /* Private constants ---------------------------------------------------------*/
 
 
+///////////////////////////////////////////////////////////////////
+////////////////////// CONFIGURATION START  ///////////////////////
+///////////////////////////////////////////////////////////////////
 
-////////////////////// CONFIGURATION START  //////////////////////
 // #define APP_TYPE_RAINBOW
-#define APP_TYPE_AUDIO_DEVIATION_1
+// #define APP_TYPE_AUDIO_DEVIATION_1               // noise turns on the leds and keeps it on for a short time, so it is not so responsive to the noises
+#define APP_TYPE_AUDIO_DEVIATION_2                  // leds are on only during the noise occuring, so it is very responsive
 // #define APP_TYPE_AUDIO_SPECTRUM
 
-#define DEBUG_ENABLED
+
+
+
+// #define DEBUG_ENABLED
 
 
 
@@ -49,9 +55,9 @@
 #define PIN_DBG1                             GPIO_NUM_16
 #define PIN_WS2812                           GPIO_NUM_5
 
-
+///////////////////////////////////////////////////////////////////
 ////////////////////// CONFIGURATION END     //////////////////////
-
+///////////////////////////////////////////////////////////////////
 
 
 #define LEDSTRIP_LED_CNT                     (60)    // Number of "pixels"
@@ -61,6 +67,8 @@
 #define ADC_SAMPLES_CNT                     (20000)
 
 
+#define STDEV_THRESHOLD_NOISE                   (100)
+#define STDEV_THRESHOLD_TOP                     (700)
 
 #define ADC_SAMPLES_CNT_VARIANCE           (2000)
 
@@ -349,37 +357,37 @@ void spectrScaledLog_band_GetFreqRange(FFT_PRECISION* frequencyScale, int freqBa
 * @param   List of parameters and related description
 * @details Detailed description of implemented functionality
 *******************************************************************************/
-double calculate_standardDeviation(uint16_t* adcSamples, uint32_t adcSampleCnt)
+uint32_t calculate_standardDeviation(uint16_t* adcSamples, uint32_t adcSampleCnt)
 {
     double sum = 0;
     double mean;
-    int64_t sum_squared_deviations = 0;
+    double sum_squared_deviations = 0;
     double variance = 0;
     double standardDeviation = 0;
 
-    for (uint32_t i = 0; i < adcSampleCnt; i++)
+    for (uint32_t i = 0; i < adcSampleCnt; i += 2)
     {
         sum += adcSamples[i];
     }
 
-    mean = sum / adcSampleCnt;
+    mean = sum / (double)(adcSampleCnt/2);
 
     // Calculate the sum of squared deviations
-    for (uint32_t i = 0; i < adcSampleCnt; i++)
+    for (uint32_t i = 0; i < adcSampleCnt; i += 2)
     {
-        double deviation = (double)adcSamples[i] - mean;
+        double deviation = (double)(adcSamples[i]) - mean;
         sum_squared_deviations += deviation * deviation;
     }
 
     // Calculate the variance
-    variance = sum_squared_deviations / adcSampleCnt;
+    variance = sum_squared_deviations / (double)(adcSampleCnt/2);
 
     if (variance != 0)
     {
         standardDeviation = sqrt(variance);
     }
 
-    return standardDeviation;
+    return (uint32_t)(standardDeviation * 100);
 }
 
 /**************************************************************************//**
@@ -396,6 +404,119 @@ static void task_02()
         DEBUG_PRINT("----------------Task_02\n");
 
         vTaskDelay(500 / portTICK_RATE_MS);
+    }
+}
+
+
+/**************************************************************************//**
+* @brief   Function name
+* @param   List of parameters and related description
+* @details Detailed description of implemented functionality
+*******************************************************************************/
+void task_audioIndicator_deviation_2(void *pvParameters)
+{
+    esp_err_t rsp;
+    uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
+    ws2812_rgb_t color;
+    ws2812_rgb_t pixels[LEDSTRIP_LED_CNT];
+
+    memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
+    
+    /* Init WS2812 pin */
+    gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
+
+    /* Init random number generation */
+    srand(time(NULL));
+
+    while (1)
+    {
+        uint32_t ledsCntToBeWritten;
+        uint8_t ledStrip_currentLedIndex;
+        uint8_t h;
+        uint8_t s = 0xFF;
+        uint8_t v;
+        
+        /* Sample data via ADC */
+        gpio_set_level(PIN_DBG1, 1);
+        rsp = adc_read_fast(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+        gpio_set_level(PIN_DBG1, 0);
+        if (ESP_OK != rsp)
+        {
+            DEBUG_PRINT("ERROR: ADC Data Sampling\n");
+        }
+
+        uint32_t stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+
+
+        ledsCntToBeWritten = 60;
+
+
+        /* Generate random led index */
+        ledStrip_currentLedIndex = rand() % LEDSTRIP_LED_CNT;
+        /* Update the led index based on the leds update count */
+        if (ledStrip_currentLedIndex + ledsCntToBeWritten >= LEDSTRIP_LED_CNT)
+        {
+            ledStrip_currentLedIndex = LEDSTRIP_LED_CNT - ledsCntToBeWritten;
+        }
+
+        /* Get current h */
+        h = rand() % 70;
+
+        /* Get v */
+        if (0 == stdDev || STDEV_THRESHOLD_NOISE > stdDev)
+        {
+            v = 0;
+        }
+        else if (STDEV_THRESHOLD_TOP < stdDev) // sensitivity
+        {
+                v = 0xff;
+        }
+        else
+        {
+            v = (uint8_t)((double)(stdDev - STDEV_THRESHOLD_NOISE) / 10);
+        }
+
+        /* Ge RGB values */
+        if (0 == v)
+        {
+            color.r = 0;
+            color.g = 0;
+            color.b = 0;
+        }
+        hsv_to_rgb(h, s, v, &color.num);
+
+        /* Update the pixel array */
+        for (int i = ledStrip_currentLedIndex; 
+            i < ledStrip_currentLedIndex + ledsCntToBeWritten; 
+            i++)
+        {
+            pixels[i].num = color.num;
+        }
+
+        /* Write the led strip */
+        ws2812_seq_start();
+        ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
+        ws2812_seq_end();
+
+#if defined(DEBUG_ENABLED)
+        /* Print debug message  */
+        TickType_t currentTickCount = xTaskGetTickCount();
+        uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
+
+        // DEBUG_PRINT("T1:\t%X\t%X\t%X\t\t%X\t%u\t%d.%d\t%d\n", 
+        //                 color.r, color.g, color.b, color.num, ledStrip_currentLedIndex,
+        //                 (int)stdDev, (int)(stdDev*1000), currentMillis);
+
+        DEBUG_PRINT("T1: %.4d\t\t%.2X %.2X %.2X\t\t%u\t\t%d\t\t%.2x %.2x %.2x\n", 
+                        currentMillis,
+                        color.r, color.g, color.b, 
+                        (int)stdDev, 
+                        ledStrip_currentLedIndex,
+                        h, s, v);
+#endif
+
+        // wait a bit
+        // DELAY_MS(10);
     }
 }
 
@@ -508,9 +629,12 @@ void task_audioIndicator_deviation_1(void *pvParameters)
         //                 color.r, color.g, color.b, color.num, ledStrip_currentLedIndex,
         //                 (int)stdDev, (int)(stdDev*1000), currentMillis);
 
-        DEBUG_PRINT("T1: %.2X %.2X %.2X\t%u\t%d\t%d\n", 
+        DEBUG_PRINT("T1: %d\t\t%.2X %.2X %.2X\t\t%u.%u\t\t%d\n", 
+                        currentMillis,
                         color.r, color.g, color.b, 
-                        ledStrip_currentLedIndex, (int)stdDev, currentMillis);
+                        (int)stdDev, (int)((int)(stdDev * 100) % 100), 
+                        ledStrip_currentLedIndex);
+
 #endif
 
 
@@ -693,6 +817,10 @@ void app_main()
 
 #if defined(APP_TYPE_AUDIO_DEVIATION_1)
     xTaskCreate(task_audioIndicator_deviation_1, "task_audioIndicator_deviation_1", 20*1024, NULL, 5, NULL);
+#endif
+
+#if defined(APP_TYPE_AUDIO_DEVIATION_2)
+    xTaskCreate(task_audioIndicator_deviation_2, "task_audioIndicator_deviation_2", 20*1024, NULL, 5, NULL);
 #endif
 
 #if defined(APP_TYPE_RAINBOW)
