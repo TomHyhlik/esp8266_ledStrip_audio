@@ -32,6 +32,16 @@
 #include "fft.h"
 
 /* Private types -------------------------------------------------------------*/
+
+typedef struct 
+{
+    ws2812_rgb_t rgb;
+    uint8_t h;
+    uint8_t s;
+    uint8_t v;
+} 
+Pixel;
+
 /* Private constants ---------------------------------------------------------*/
 
 
@@ -47,7 +57,7 @@
 
 
 
-// #define DEBUG_ENABLED
+#define DEBUG_ENABLED
 
 
 
@@ -418,7 +428,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
     esp_err_t rsp;
     uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
     ws2812_rgb_t color;
-    ws2812_rgb_t pixels[LEDSTRIP_LED_CNT];
+    Pixel pixels[LEDSTRIP_LED_CNT];
 
     memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
     
@@ -490,7 +500,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
             i < ledStrip_currentLedIndex + ledsCntToBeWritten; 
             i++)
         {
-            pixels[i].num = color.num;
+            pixels[i].rgb.num = color.num;
         }
 
         /* Write the led strip */
