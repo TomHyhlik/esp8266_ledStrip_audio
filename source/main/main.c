@@ -79,8 +79,9 @@ Pixel_hsv_t;
 #define STDEV_THRESHOLD_TOP                     (1500)
 #define STDEV_USED_RANGE                        (STDEV_THRESHOLD_TOP - STDEV_THRESHOLD_NOISE)
 
+#define MAX_LED_CNT_SWITCHED                    (10)
 
-#define ADC_SAMPLES_CNT_VARIANCE           (2000)
+#define ADC_SAMPLES_CNT_VARIANCE           (1000)
 
 
 static const char *TAG = "ledStrip_audio";
@@ -447,6 +448,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         uint8_t h;
         uint8_t s = 0xFF;
         uint8_t v;
+        uint32_t stdDev;
         
         /* Sample data via ADC */
         gpio_set_level(PIN_DBG1, 1);
@@ -457,7 +459,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
             DEBUG_PRINT("ERROR: ADC Data Sampling\n");
         }
 
-        uint32_t stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
+        stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
 
 
 
@@ -469,29 +471,13 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         }
         else if (STDEV_THRESHOLD_TOP < stdDev) // sensitivity
         {
-                v = 0xff;
-                ledsCntToBeWritten = 5;
+                v = 0xFF;
+                ledsCntToBeWritten = MAX_LED_CNT_SWITCHED;
         }
         else
         {
             v = (uint8_t)((double)(stdDev - STDEV_THRESHOLD_NOISE) / 10);
-
-            if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.2))
-            {
-                ledsCntToBeWritten = 1;
-            }
-            else if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.4))
-            {
-                ledsCntToBeWritten = 2;
-            }
-            else if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.75))
-            {
-                ledsCntToBeWritten = 3;
-            }
-            else
-            {
-                ledsCntToBeWritten = 4;
-            }
+            ledsCntToBeWritten = (uint32_t)(MAX_LED_CNT_SWITCHED * ((double)stdDev / (double)STDEV_THRESHOLD_TOP));
         }
 
 
@@ -558,12 +544,12 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         TickType_t currentTickCount = xTaskGetTickCount();
         uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
 
-        DEBUG_PRINT("T1: %.4d\t\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t%u\t\t%d\t%d\n", 
+        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t\t%u\t\t%d\t%d\n", 
                         currentMillis,
                         newPixel.r, newPixel.g, newPixel.b, 
                         h, s, v,
-                        (int)stdDev, 
                         ledStrip_currentLedIndex,
+                        (int)stdDev, 
                         ledsCntToBeWritten);
 #endif
 
