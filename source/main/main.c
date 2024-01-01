@@ -559,15 +559,22 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         TickType_t currentTickCount = xTaskGetTickCount();
         uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
 
-        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t%u \t%u   \t%u   \t%u   \t%u \n", 
+        char ledsCntToBeWritten_str[MAX_LED_CNT_SWITCHED+1];
+        memset(ledsCntToBeWritten_str, 0, sizeof(ledsCntToBeWritten_str));
+        for (int i = 0; i < ledsCntToBeWritten; i++)
+        {
+            ledsCntToBeWritten_str[i] = '|';
+        }
+
+        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t%u \t%u   \t%u   \t%u   \t%s\n", 
                         currentMillis,
                         newPixel.r, newPixel.g, newPixel.b, 
                         h, s, v,
                         ledStrip_currentLedIndex,
                         stdDev, 
                         stdDev_updated,
-                        ledsCntToBeWritten,
-                        (uint32_t)(sensitivityMultiplier*1000));
+                        (uint32_t)(sensitivityMultiplier*1000),
+                        ledsCntToBeWritten_str);
 #endif
 
         // wait a bit
