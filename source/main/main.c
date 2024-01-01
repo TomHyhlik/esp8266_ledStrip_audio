@@ -434,6 +434,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
     ws2812_rgb_t newPixel;
     ws2812_rgb_t pixels_rgb[LEDSTRIP_LED_CNT];
     Pixel_hsv_t pixels_hsv[LEDSTRIP_LED_CNT];
+    double sensitivityMultiplier = 1.0;
 
     memset(pixels_rgb, 0, LEDSTRIP_LED_CNT*sizeof(ws2812_rgb_t));
     memset(pixels_hsv, 0, LEDSTRIP_LED_CNT*sizeof(Pixel_hsv_t));
@@ -452,6 +453,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         uint8_t s = 0xFF;
         uint8_t v;
         uint32_t stdDev;
+        uint32_t stdDev_updated;
         
         /* Sample data via ADC */
         gpio_set_level(PIN_DBG1, 1);
@@ -464,23 +466,39 @@ void task_audioIndicator_deviation_2(void *pvParameters)
 
         stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
 
-
+        stdDev_updated = (uint32_t)((double)stdDev * sensitivityMultiplier);
 
         /* Get v and ledsCntToBeWritten */
-        if (stdDev < STDEV_THRESHOLD_NOISE)
+        if (stdDev_updated < STDEV_THRESHOLD_NOISE)
         {
             v = 0;
             ledsCntToBeWritten = 0;
         }
-        else if (STDEV_THRESHOLD_TOP < stdDev) // sensitivity
+        else if (STDEV_THRESHOLD_TOP < stdDev_updated)
         {
                 v = 0xFF;
                 ledsCntToBeWritten = MAX_LED_CNT_SWITCHED;
         }
         else
         {
-            v = (uint8_t)((double)(stdDev - STDEV_THRESHOLD_NOISE) / 10);
-            ledsCntToBeWritten = (uint32_t)(MAX_LED_CNT_SWITCHED * ((double)stdDev / (double)STDEV_THRESHOLD_TOP));
+            v = (uint8_t)((double)(stdDev_updated - STDEV_THRESHOLD_NOISE) / ((double)(STDEV_USED_RANGE)/(double)0xFF));
+            ledsCntToBeWritten = (uint32_t)(MAX_LED_CNT_SWITCHED * ((double)stdDev_updated / (double)STDEV_THRESHOLD_TOP));
+        }
+
+        /* Update sensitivity */
+        if ((MAX_LED_CNT_SWITCHED / 2) < ledsCntToBeWritten)
+        {
+            /* Decrease sensitivity */
+            sensitivityMultiplier *= (double)MAX_LED_CNT_SWITCHED / (double)(MAX_LED_CNT_SWITCHED + ((double)ledsCntToBeWritten * 0.08));
+        }
+        else
+        {
+            /* Increase sensitivity (1 is maximum) */
+            if (sensitivityMultiplier < 1)
+            {
+                if (0 == ledsCntToBeWritten) { sensitivityMultiplier *= 1.002; }
+                else                         { sensitivityMultiplier *= 1.0005; }
+            }
         }
 
         /* Generate random led index */
@@ -541,13 +559,15 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         TickType_t currentTickCount = xTaskGetTickCount();
         uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
 
-        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t\t%u\t\t%u  \t%d\n", 
+        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t%u \t%u   \t%u   \t%u   \t%u \n", 
                         currentMillis,
                         newPixel.r, newPixel.g, newPixel.b, 
                         h, s, v,
                         ledStrip_currentLedIndex,
                         stdDev, 
-                        ledsCntToBeWritten);
+                        stdDev_updated,
+                        ledsCntToBeWritten,
+                        (uint32_t)(sensitivityMultiplier*1000));
 #endif
 
         // wait a bit
