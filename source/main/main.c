@@ -480,8 +480,6 @@ void task_audioIndicator_deviation_2(void *pvParameters)
             ledsCntToBeWritten = (uint32_t)(MAX_LED_CNT_SWITCHED * ((double)stdDev / (double)STDEV_THRESHOLD_TOP));
         }
 
-
-
         /* Generate random led index */
         ledStrip_currentLedIndex = rand() % LEDSTRIP_LED_CNT;
         /* Update the led index based on the leds update count */
@@ -490,12 +488,8 @@ void task_audioIndicator_deviation_2(void *pvParameters)
             ledStrip_currentLedIndex = LEDSTRIP_LED_CNT - ledsCntToBeWritten;
         }
 
-
-
         /* Get current h */
         h = rand() % 70;
-
-
 
         /* Ge RGB values */
         if (0 == v)
@@ -544,12 +538,12 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         TickType_t currentTickCount = xTaskGetTickCount();
         uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
 
-        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t\t%u\t\t%d\t%d\n", 
+        DEBUG_PRINT("T1: %.6d\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t\t%u\t\t%u  \t%d\n", 
                         currentMillis,
                         newPixel.r, newPixel.g, newPixel.b, 
                         h, s, v,
                         ledStrip_currentLedIndex,
-                        (int)stdDev, 
+                        stdDev, 
                         ledsCntToBeWritten);
 #endif
 
