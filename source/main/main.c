@@ -32,15 +32,13 @@
 #include "fft.h"
 
 /* Private types -------------------------------------------------------------*/
-
 typedef struct 
 {
-    ws2812_rgb_t rgb;
     uint8_t h;
     uint8_t s;
     uint8_t v;
-} 
-Pixel;
+}
+Pixel_hsv_t;
 
 /* Private constants ---------------------------------------------------------*/
 
@@ -78,7 +76,9 @@ Pixel;
 
 
 #define STDEV_THRESHOLD_NOISE                   (100)
-#define STDEV_THRESHOLD_TOP                     (700)
+#define STDEV_THRESHOLD_TOP                     (1500)
+#define STDEV_USED_RANGE                        (STDEV_THRESHOLD_TOP - STDEV_THRESHOLD_NOISE)
+
 
 #define ADC_SAMPLES_CNT_VARIANCE           (2000)
 
@@ -427,10 +427,12 @@ void task_audioIndicator_deviation_2(void *pvParameters)
 {
     esp_err_t rsp;
     uint16_t adc_data[ADC_SAMPLES_CNT_VARIANCE];
-    ws2812_rgb_t color;
-    Pixel pixels[LEDSTRIP_LED_CNT];
+    ws2812_rgb_t newPixel;
+    ws2812_rgb_t pixels_rgb[LEDSTRIP_LED_CNT];
+    Pixel_hsv_t pixels_hsv[LEDSTRIP_LED_CNT];
 
-    memset(pixels, 0, LEDSTRIP_LED_CNT*sizeof(uint32_t));
+    memset(pixels_rgb, 0, LEDSTRIP_LED_CNT*sizeof(ws2812_rgb_t));
+    memset(pixels_hsv, 0, LEDSTRIP_LED_CNT*sizeof(Pixel_hsv_t));
     
     /* Init WS2812 pin */
     gpio_set_direction(PIN_WS2812, GPIO_MODE_OUTPUT);
@@ -458,7 +460,40 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         uint32_t stdDev = calculate_standardDeviation(adc_data, ADC_SAMPLES_CNT_VARIANCE);
 
 
-        ledsCntToBeWritten = 60;
+
+        /* Get v and ledsCntToBeWritten */
+        if (stdDev < STDEV_THRESHOLD_NOISE)
+        {
+            v = 0;
+            ledsCntToBeWritten = 0;
+        }
+        else if (STDEV_THRESHOLD_TOP < stdDev) // sensitivity
+        {
+                v = 0xff;
+                ledsCntToBeWritten = 5;
+        }
+        else
+        {
+            v = (uint8_t)((double)(stdDev - STDEV_THRESHOLD_NOISE) / 10);
+
+            if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.2))
+            {
+                ledsCntToBeWritten = 1;
+            }
+            else if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.4))
+            {
+                ledsCntToBeWritten = 2;
+            }
+            else if (stdDev < ((double)STDEV_THRESHOLD_TOP * 0.75))
+            {
+                ledsCntToBeWritten = 3;
+            }
+            else
+            {
+                ledsCntToBeWritten = 4;
+            }
+        }
+
 
 
         /* Generate random led index */
@@ -469,43 +504,53 @@ void task_audioIndicator_deviation_2(void *pvParameters)
             ledStrip_currentLedIndex = LEDSTRIP_LED_CNT - ledsCntToBeWritten;
         }
 
+
+
         /* Get current h */
         h = rand() % 70;
 
-        /* Get v */
-        if (0 == stdDev || STDEV_THRESHOLD_NOISE > stdDev)
-        {
-            v = 0;
-        }
-        else if (STDEV_THRESHOLD_TOP < stdDev) // sensitivity
-        {
-                v = 0xff;
-        }
-        else
-        {
-            v = (uint8_t)((double)(stdDev - STDEV_THRESHOLD_NOISE) / 10);
-        }
+
 
         /* Ge RGB values */
         if (0 == v)
         {
-            color.r = 0;
-            color.g = 0;
-            color.b = 0;
+            newPixel.r = 0;
+            newPixel.g = 0;
+            newPixel.b = 0;
         }
-        hsv_to_rgb(h, s, v, &color.num);
+        hsv_to_rgb(h, s, v, &newPixel.num);
 
-        /* Update the pixel array */
+
+        /* Updat the pixel array to shut down the lights slowly */
+        for (int i = 0; i < LEDSTRIP_LED_CNT; i++)
+        {
+            if (pixels_hsv[i].v != 0)
+            {
+                pixels_hsv[i].v = (uint8_t)((double)pixels_hsv[i].v * 0.8);
+                hsv_to_rgb(pixels_hsv[i].h, pixels_hsv[i].s, pixels_hsv[i].v, &pixels_rgb[i].num);
+            }
+            else
+            {
+                pixels_rgb->num = 0;
+            }
+        }
+
+
+        /* Update the led strip array with the new pixels */
         for (int i = ledStrip_currentLedIndex; 
             i < ledStrip_currentLedIndex + ledsCntToBeWritten; 
             i++)
         {
-            pixels[i].rgb.num = color.num;
+            pixels_rgb[i].num = newPixel.num;
+
+            pixels_hsv[i].h = h;
+            pixels_hsv[i].s = s;
+            pixels_hsv[i].v = v;
         }
 
         /* Write the led strip */
         ws2812_seq_start();
-        ws2812_set_many(PIN_WS2812, pixels, LEDSTRIP_LED_CNT);
+        ws2812_set_many(PIN_WS2812, pixels_rgb, LEDSTRIP_LED_CNT);
         ws2812_seq_end();
 
 #if defined(DEBUG_ENABLED)
@@ -513,16 +558,13 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         TickType_t currentTickCount = xTaskGetTickCount();
         uint32_t currentMillis = currentTickCount * portTICK_PERIOD_MS;
 
-        // DEBUG_PRINT("T1:\t%X\t%X\t%X\t\t%X\t%u\t%d.%d\t%d\n", 
-        //                 color.r, color.g, color.b, color.num, ledStrip_currentLedIndex,
-        //                 (int)stdDev, (int)(stdDev*1000), currentMillis);
-
-        DEBUG_PRINT("T1: %.4d\t\t%.2X %.2X %.2X\t\t%u\t\t%d\t\t%.2x %.2x %.2x\n", 
+        DEBUG_PRINT("T1: %.4d\t\t%.2X %.2X %.2X\t%.2x %.2x %.2x\t%u\t\t%d\t%d\n", 
                         currentMillis,
-                        color.r, color.g, color.b, 
+                        newPixel.r, newPixel.g, newPixel.b, 
+                        h, s, v,
                         (int)stdDev, 
                         ledStrip_currentLedIndex,
-                        h, s, v);
+                        ledsCntToBeWritten);
 #endif
 
         // wait a bit
