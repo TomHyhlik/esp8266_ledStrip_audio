@@ -43,22 +43,23 @@ Pixel_hsv_t;
 /* Private constants ---------------------------------------------------------*/
 
 
-///////////////////////////////////////////////////////////////////
-////////////////////// CONFIGURATION START  ///////////////////////
-///////////////////////////////////////////////////////////////////
-
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+// CONFIGURATION APP BUILD                                                    //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 // #define APP_TYPE_RAINBOW
 // #define APP_TYPE_AUDIO_DEVIATION_1               // noise turns on the leds and keeps it on for a short time, so it is not so responsive to the noises
 #define APP_TYPE_AUDIO_DEVIATION_2                  // leds are on only during the noise occuring, so it is very responsive
 // #define APP_TYPE_AUDIO_SPECTRUM
 
-
-
-
 #define DEBUG_ENABLED
 
-
-
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+// CONFIGURATION GPIO CONNECTION                                              //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 #define PIN_LED_INTEGRATED                   GPIO_NUM_2
 #define PIN_DBG1                             GPIO_NUM_16
 #define PIN_WS2812                           GPIO_NUM_5
@@ -75,13 +76,14 @@ Pixel_hsv_t;
 #define ADC_SAMPLES_CNT                     (20000)
 
 
-#define STDEV_THRESHOLD_NOISE                   (100)
-#define STDEV_THRESHOLD_TOP                     (1500)
+#define STDEV_THRESHOLD_NOISE                   (100)   // Standard deviation threshold below which the sampled sound data are considered as noise
+#define STDEV_THRESHOLD_TOP                     (1500)  // Standard deviation threshold ... todo
 #define STDEV_USED_RANGE                        (STDEV_THRESHOLD_TOP - STDEV_THRESHOLD_NOISE)
 
-#define MAX_LED_CNT_SWITCHED                    (10)
+#define MAX_LED_CNT_SWITCHED                    (10)  // Maximum nuber of LEDs turned on in one sampling cycle
+#define LED_TURINING_OFF_SPEED                  (0.9) // 1 is quickest turning the LEDs off, lower number is fastest
 
-#define ADC_SAMPLES_CNT_VARIANCE           (1000)
+#define ADC_SAMPLES_CNT_VARIANCE                (1000) // ADC samples count in one cycle
 
 
 static const char *TAG = "ledStrip_audio";
@@ -506,7 +508,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         {
             if (pixels_hsv[i].v != 0)
             {
-                pixels_hsv[i].v = (uint8_t)((double)pixels_hsv[i].v * 0.8);
+                pixels_hsv[i].v = (uint8_t)((double)pixels_hsv[i].v * LED_TURINING_OFF_SPEED);
                 hsv_to_rgb(pixels_hsv[i].h, pixels_hsv[i].s, pixels_hsv[i].v, &pixels_rgb[i].num);
             }
             else
