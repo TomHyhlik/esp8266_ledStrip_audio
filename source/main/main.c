@@ -86,6 +86,8 @@ Pixel_hsv_t;
 
 #define ADC_SAMPLES_CNT_VARIANCE                (1000) // ADC samples count in one cycle
 
+#define SENSITIVITY_MULTIPLIER_DEFAULT         1.00
+
 
 static const char *TAG = "ledStrip_audio";
 
@@ -434,7 +436,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
     ws2812_rgb_t newPixel;
     ws2812_rgb_t pixels_rgb[LEDSTRIP_LED_CNT];
     Pixel_hsv_t pixels_hsv[LEDSTRIP_LED_CNT];
-    double sensitivityMultiplier = 1.0;
+    double sensitivityMultiplier = SENSITIVITY_MULTIPLIER_DEFAULT;
 
     memset(pixels_rgb, 0, LEDSTRIP_LED_CNT*sizeof(ws2812_rgb_t));
     memset(pixels_hsv, 0, LEDSTRIP_LED_CNT*sizeof(Pixel_hsv_t));
@@ -494,7 +496,7 @@ void task_audioIndicator_deviation_2(void *pvParameters)
         else
         {
             /* Increase sensitivity (1 is maximum) */
-            if (sensitivityMultiplier < 1)
+            if (sensitivityMultiplier < SENSITIVITY_MULTIPLIER_DEFAULT)
             {
                 if (0 == ledsCntToBeWritten) { sensitivityMultiplier *= 1.002; }
                 else                         { sensitivityMultiplier *= 1.0005; }
